@@ -18,18 +18,18 @@ class SensorModel:
 
         ####################################
         # TODO
-        # Adjust these parameters
-        self.alpha_hit = 0
-        self.alpha_short = 0
-        self.alpha_max = 0
-        self.alpha_rand = 0
-        self.sigma_hit = 0
+        #  Adjust these parameters
+        self.alpha_hit = 0.74
+        self.alpha_short = 0.07
+        self.alpha_max = 0.07
+        self.alpha_rand = 0.12
+        self.sigma_hit = 8.0
 
         # Your sensor table will be a `table_width` x `table_width` np array:
         self.table_width = 201
         ####################################
 
-        # Precompute the sensor model table
+        #  Precompute the sensor model table
         self.sensor_model_table = None
         self.precompute_sensor_model()
 
@@ -69,7 +69,32 @@ class SensorModel:
         returns:
             No return type. Directly modify `self.sensor_model_table`.
         """
-        raise NotImplementedError
+        z_k = np.linspace(0, 100, num=self.table_width)
+        d = np.linspace(0, 100, num=self.table_width)
+
+        z_max = z_k[-1]
+
+        p_hit = np.where(0 <= z_k and z_k <= z_max,
+                         np.exp(-((z_k-d)**2)/(2*self.sigma_hit**2))*n/((2*np.pi*self.sigma_hit**2)**0.5),
+                         0)
+
+        p_short = np.where(0 <= z_k and z_k <= z_max and d != 0,
+                           1-z_k/d,
+                           0)
+
+        p_max = np.where(z_k == z_max,
+                         1,
+                         0)
+
+        p_rand = np.where(0 <= z_k and z_k <= z_max,
+                          1/z_max,
+                          0)
+        p = self.alpha_hit*p_hit \
+            + self.alpha_short*p_short \
+            + self.alpha_max*p_max \
+            + self.alpha_rand*p_rand
+
+        return p
 
     def evaluate(self, particles, observation):
         """
