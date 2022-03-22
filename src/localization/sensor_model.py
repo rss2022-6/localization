@@ -69,16 +69,18 @@ class SensorModel:
         returns:
             No return type. Directly modify `self.sensor_model_table`.
         """
-        z_k = np.linspace(0, 100, num=self.table_width)
-        d = np.linspace(0, 100, num=self.table_width)
+        z_k = np.linspace(0, 200, num=self.table_width)
+        d = np.linspace(0, 200, num=self.table_width)
 
         z_max = z_k[-1]
 
-        p_hit = np.where(0 <= z_k and z_k <= z_max,
-                         np.exp(-((z_k-d)**2)/(2*self.sigma_hit**2))*n/((2*np.pi*self.sigma_hit**2)**0.5),
+        p_hit = np.where(np.logical_and(0 <= z_k,  z_k <= z_max),
+                         np.exp(-((z_k-d)**2)/(2*self.sigma_hit**2))*1/((2*np.pi*self.sigma_hit**2)**0.5),
                          0)
+        # Normalize p_hit values
+        p_hit = np.divide(p_hit, np.sum(p_hit, axis=0))
 
-        p_short = np.where(0 <= z_k and z_k <= z_max and d != 0,
+        p_short = np.where(np.logical_and(np.logical_and(0 <= z_k, z_k <= z_max), d != 0),
                            1-z_k/d,
                            0)
 
@@ -86,7 +88,7 @@ class SensorModel:
                          1,
                          0)
 
-        p_rand = np.where(0 <= z_k and z_k <= z_max,
+        p_rand = np.where(np.logical_and(0 <= z_k, z_k <= z_max),
                           1/z_max,
                           0)
         p = self.alpha_hit*p_hit \
@@ -94,6 +96,10 @@ class SensorModel:
             + self.alpha_max*p_max \
             + self.alpha_rand*p_rand
 
+        # Normalize across columns (d)
+        p = np.divide(p, np.sum(p, axis=0))
+
+        print(p)
         return p
 
     def evaluate(self, particles, observation):
