@@ -1,5 +1,5 @@
 import numpy as np
-
+from matplotlib import pyplot as plt
 
 
 # TODO
@@ -37,20 +37,18 @@ def precompute_sensor_model():
     returns:
         No return type. Directly modify `self.sensor_model_table`.
     """
-    d = np.linspace(0, 10, num=table_width)
-    z_k = np.array([np.linspace(0, 10, num=table_width)]).T
+    d = np.linspace(0, 200, num=table_width)
+    z_k = np.array([np.linspace(0, 200, num=table_width)]).T
 
     z_max = z_k[-1]
-    n = 100
-
-    p_hit = np.where(np.logical_and(0 <= z_k, z_k <= z_max),
-                     np.exp(-((z_k - d) ** 2) / (2 * sigma_hit ** 2)) * n / ((2 * np.pi * sigma_hit ** 2) ** 0.5),
+    n = 1
+    p_hit = np.where(np.logical_and(z_k >= 0, z_k <= z_max),
+                     np.exp(-((z_k - d) ** 2) / (2 * sigma_hit ** 2)) ,
                      0)
 
-    p_hit = np.divide(p_hit, np.sum(p_hit, axis=0))
-
-    p_short = np.where(np.logical_and(0 <= z_k, np.logical_and(z_k <= d, d != 0)),
-                       1 - z_k/d,
+    p_hit = p_hit / np.sum(p_hit, axis=0)
+    p_short = np.where(np.logical_and(z_k >= 0, np.logical_and(z_k <= d, d != 0)),
+                       2/d*(1 - z_k/d),
                        0)
 
     p_max = np.where(z_k == z_max,
@@ -65,11 +63,16 @@ def precompute_sensor_model():
         + alpha_max * p_max \
         + alpha_rand * p_rand
 
+    p = p / np.sum(p, axis=0)
+
     return p
 
 if __name__ == "__main__":
     prob = precompute_sensor_model()
     print(prob)
-    print(np.sum(prob, axis=0))
+    i = 70
+    plt.plot(np.linspace(0, 10, num=len(prob[:,i])), prob[:,i])
+    plt.show()
+
 
 

@@ -71,38 +71,36 @@ class SensorModel:
         returns:
             No return type. Directly modify `self.sensor_model_table`.
         """
-        z_k = np.linspace(0, 200, num=self.table_width)
-        d = np.linspace(0, 200, num=self.table_width)
+        # used 200 for max pixel distance because that is what they use in the graph example
+        d = np.linspace(0, self.z_max, num=self.table_width)
+        z_k = np.array([np.linspace(0, self.z_max, num=self.table_width)]).T
 
-        self.z_max = z_k[-1]
-
-        p_hit = np.where(np.logical_and(0 <= z_k,  z_k <= z_max),
-                         np.exp(-((z_k-d)**2)/(2*self.sigma_hit**2))*1/((2*np.pi*self.sigma_hit**2)**0.5),
+        p_hit = np.where(np.logical_and(z_k >= 0, z_k <= self.z_max),
+                         np.exp(-((z_k - d) ** 2) / (2 * self.sigma_hit ** 2)),
                          0)
-        # Normalize p_hit values
-        p_hit = np.divide(p_hit, np.sum(p_hit, axis=0))
+        p_hit = p_hit / np.sum(p_hit, axis=0) # normalize p_hit distribution for each value of d
 
-        p_short = np.where(np.logical_and(np.logical_and(0 <= z_k, z_k <= z_max), d != 0),
-                           1-z_k/d,
+
+        p_short = np.where(np.logical_and(z_k >= 0, np.logical_and(z_k <= d, d != 0)),
+                           2 / d * (1 - z_k / d),
                            0)
 
-        p_max = np.where(z_k == z_max,
+        p_max = np.where(z_k == self.z_max,
                          1,
                          0)
 
-        p_rand = np.where(np.logical_and(0 <= z_k, z_k <= z_max),
-                          1/z_max,
+        p_rand = np.where(np.logical_and(0 <= z_k, z_k <= self.z_max),
+                          1 / self.z_max,
                           0)
-        p = self.alpha_hit*p_hit \
-            + self.alpha_short*p_short \
-            + self.alpha_max*p_max \
-            + self.alpha_rand*p_rand
+        p = self.alpha_hit * p_hit \
+            + self.alpha_short * p_short \
+            + self.alpha_max * p_max \
+            + self.alpha_rand * p_rand
 
-        # Normalize across columns (d)
-        p = np.divide(p, np.sum(p, axis=0))
+        p = p / np.sum(p, axis=0)  # normalize whole probablility distribution for each value of d
 
-        print(p)
-        return p
+        return p  # np 2D array, rows are z_k values, columns are d values
+        # ex: [[(d=0, z_k=0), (d=1,z_k=0)], [(d=0, z_k=1), (d=1, z_k=1)]]
 
     def evaluate(self, particles, observation):
         """
