@@ -15,6 +15,7 @@ class SensorModel:
         self.num_beams_per_particle = rospy.get_param("~num_beams_per_particle")
         self.scan_theta_discretization = rospy.get_param("~scan_theta_discretization")
         self.scan_field_of_view = rospy.get_param("~scan_field_of_view")
+        self.lidar_scale_to_map_scale = rospy.get_param("~lidar_scale_to_map_scale", 1.0)
 
         ####################################
         # TODO
@@ -24,6 +25,7 @@ class SensorModel:
         self.alpha_max = 0.07
         self.alpha_rand = 0.12
         self.sigma_hit = 8.0
+        self.z_max = 200
 
         # Your sensor table will be a `table_width` x `table_width` np array:
         self.table_width = 201
@@ -72,7 +74,7 @@ class SensorModel:
         z_k = np.linspace(0, 200, num=self.table_width)
         d = np.linspace(0, 200, num=self.table_width)
 
-        z_max = z_k[-1]
+        self.z_max = z_k[-1]
 
         p_hit = np.where(np.logical_and(0 <= z_k,  z_k <= z_max),
                          np.exp(-((z_k-d)**2)/(2*self.sigma_hit**2))*1/((2*np.pi*self.sigma_hit**2)**0.5),
@@ -132,11 +134,34 @@ class SensorModel:
         #
         # You will probably want to use this function
         # to perform ray tracing from all the particles.
-        # This produces a matrix of size N x num_beams_per_particle 
+        # This produces a matrix of size N x num_beams_per_particle
 
+        # Down scale lidar data to 100 observations
+        observed = np.arange(0, observation.size, observation.size/100)
+        down_scale = np.delete(observation, observed)
+        # Perform ray tracing of particles
         scans = self.scan_sim.scan(particles)
 
+        # Scale rays to pixels and clip to acceptable ranges
+        scans = scale(scans)
+        # Scale lidar to pixels and clip
+        lidar = scale(down_scale)
+
+        # Temp below
+        evaluated = sensor_model_table[lidar, scans]
+
+        return evaluated
+    
         ####################################
+        
+    def scale(self, arr):
+        # Scale to pixels
+        ret_arr = np.divide(arr, self.map_resolution*self.lidar_scale_to_map_scale)
+        # Clip between 0 and z_max
+        ret_arr = np.where(ret_arr > self.z_max, ret_arr, self.z_max)
+        ret_arr = np.where(ret_arr < 0, ret_arr, 0)
+
+        return ret_arr
 
     def map_callback(self, map_msg):
         # Convert the map to a numpy array
