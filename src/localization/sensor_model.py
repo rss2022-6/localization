@@ -76,7 +76,7 @@ class SensorModel:
         z_k = np.array([np.linspace(0, self.z_max, num=self.table_width)]).T
 
         p_hit = np.where(np.logical_and(z_k >= 0, z_k <= self.z_max),
-                         np.exp(-((z_k - d) ** 2) / (2 * self.sigma_hit ** 2)),
+                         np.exp(-((z_k - d) ** 2) / (2 * self.sigma_hit ** 2))* 1/((2*np.pi*self.sigma_hit**2)**0.5),
                          0)
         p_hit = p_hit / np.sum(p_hit, axis=0) # normalize p_hit distribution for each value of d
 
@@ -99,6 +99,7 @@ class SensorModel:
 
         p = p / np.sum(p, axis=0)  # normalize whole probablility distribution for each value of d
 
+        self.sensor_model_table = p
         return p  # np 2D array, rows are z_k values, columns are d values
         # ex: [[(d=0, z_k=0), (d=1,z_k=0)], [(d=0, z_k=1), (d=1, z_k=1)]]
 
@@ -125,7 +126,6 @@ class SensorModel:
 
         if not self.map_set:
             return
-
         ####################################
         # TODO
         # Evaluate the sensor model here!
@@ -135,31 +135,34 @@ class SensorModel:
         # This produces a matrix of size N x num_beams_per_particle
 
         # Down scale lidar data to 100 observations
-        observed = np.arange(0, observation.size, observation.size/100)
-        down_scale = np.delete(observation, observed)
+        observed = np.arange(0, observation.size, observation.size/self.num_beams_per_particle)
+        down_scale = np.take(observation, observed)
         # Perform ray tracing of particles
         scans = self.scan_sim.scan(particles)
-
+        min_scan = np.amin(scans, axis=1)
         # Scale rays to pixels and clip to acceptable ranges
-        scans = scale(scans)
+        min_scan = self.scale(min_scan)
         # Scale lidar to pixels and clip
-        lidar = scale(down_scale)
+        lidar = self.scale(down_scale)
 
-        # Temp below
-        evaluated = sensor_model_table[lidar, scans]
-
+        i = np.arange(min_scan.size)
+        evaluated = np.array([])
+        for index in i:
+            x = int(lidar[index])
+            y = int(min_scan[index])
+            #evaluated = np.append(evaluated, y)
+            # Squash the probabilities
+            evaluated = np.append(evaluated, (self.sensor_model_table[x, y])**(1/2.2))
         return evaluated
-    
-        ####################################
         
     def scale(self, arr):
         # Scale to pixels
         ret_arr = np.divide(arr, self.map_resolution*self.lidar_scale_to_map_scale)
         # Clip between 0 and z_max
-        ret_arr = np.where(ret_arr > self.z_max, ret_arr, self.z_max)
-        ret_arr = np.where(ret_arr < 0, ret_arr, 0)
+        ret_arr = np.where(ret_arr > self.z_max, self.z_max, ret_arr)
+        ret_arr = np.where(ret_arr < 0, 0, ret_arr)
 
-        return ret_arr
+        return np.round(ret_arr)
 
     def map_callback(self, map_msg):
         # Convert the map to a numpy array
@@ -187,5 +190,7 @@ class SensorModel:
 
         # Make the map set
         self.map_set = True
+
+        self.map_resolution = map_msg.info.resolution
 
         print("Map initialized")
