@@ -7,8 +7,6 @@ from nav_msgs.msg import OccupancyGrid
 from tf.transformations import quaternion_from_euler
 
 class SensorModel:
-
-
     def __init__(self):
         # Fetch parameters
         self.map_topic = rospy.get_param("~map_topic")
@@ -25,7 +23,7 @@ class SensorModel:
         self.alpha_max = 0.07
         self.alpha_rand = 0.12
         self.sigma_hit = 8.0
-        self.z_max = 200
+        self.z_max = 200.0
 
         # Your sensor table will be a `table_width` x `table_width` np array:
         self.table_width = 201
@@ -41,7 +39,7 @@ class SensorModel:
                 self.scan_field_of_view,
                 0, # This is not the simulator, don't add noise
                 0.01, # This is used as an epsilon
-                self.scan_theta_discretization) 
+                self.scan_theta_discretization)
 
         # Subscribe to the map
         self.map = None
