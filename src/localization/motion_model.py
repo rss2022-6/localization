@@ -1,4 +1,5 @@
 import numpy as np
+import rospy
 class MotionModel:
 
     def __init__(self):
@@ -7,7 +8,7 @@ class MotionModel:
         # TODO
         # Do any precomputation for the motion
         # model here.
-        pass
+        self.deterministic = rospy.get_param("~deterministic")
 
         ####################################
 
@@ -42,11 +43,21 @@ class MotionModel:
         dy = odometry[1]
         dtheta = odometry[2]
 
+        data_size = particles.shape[0]
+
         rot_matrix = np.array([[cos[:,0], sin[:,0]], [-sin[:,0], cos[:,0]]]).T
         car_diff = np.array([[dx],[dy]])
 
-        world_diff = np.dot(rot_matrix[:], car_diff)
-        particles = np.array([x[:] + world_diff[:,0], y[:] + world_diff[:,1], theta[:] + dtheta]).T
+        if (self.deterministic):
+            world_diff = np.dot(rot_matrix[:], car_diff)
+        else:
+            noise = np.random.normal(0, 0.005, size=(2, data_size))
+            car_diff = (car_diff + noise).T
 
+            world_diff = np.zeros((data_size, 2, 1))
+            for i in range(data_size):
+                world_diff[i] = np.dot(rot_matrix[i], np.array([car_diff[i]]).T)
+
+        particles = np.array([x[:] + world_diff[:,0], y[:] + world_diff[:,1], theta[:] + dtheta]).T
         return particles[0]
         ####################################
