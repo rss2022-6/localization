@@ -127,30 +127,28 @@ class SensorModel:
         ####################################
         # TODO
         # Evaluate the sensor model here!
-        #
-        # You will probably want to use this function
-        # to perform ray tracing from all the particles.
-        # This produces a matrix of size N x num_beams_per_particle
 
         # Down scale lidar data to 100 observations
         observed = np.arange(0, observation.size, observation.size/self.num_beams_per_particle)
         down_scale = np.take(observation, observed)
         # Perform ray tracing of particles
+        # This produces a matrix of size N x num_beams_per_particle
         scans = self.scan_sim.scan(particles)
-        min_scan = np.amin(scans, axis=1)
         # Scale rays to pixels and clip to acceptable ranges
-        min_scan = self.scale(min_scan)
+        scan = self.scale(scans)
         # Scale lidar to pixels and clip
         lidar = self.scale(down_scale)
 
-        i = np.arange(min_scan.size)
-        evaluated = np.array([])
-        for index in i:
-            x = int(lidar[index])
-            y = int(min_scan[index])
-            #evaluated = np.append(evaluated, y)
+        evaluated = np.ones(scan.shape[0])
+        # Iterate through all particles to find each's probability
+        for index in range(scan.shape[0]):
+            y = scan[index, :]
+            # Multiply probability of each beam at the given particle and distance
+            for beam in range(self.num_beams_per_particle):
+                scan_beam = y[beam]
+                evaluated[index] *= self.sensor_model_table[int(lidar[beam]), int(scan_beam)]
             # Squash the probabilities
-            evaluated = np.append(evaluated, (self.sensor_model_table[x, y])**(1/2.2))
+            evaluated[index] = (evaluated[index])**(1/2.2)
         return evaluated
         
     def scale(self, arr):
@@ -161,7 +159,7 @@ class SensorModel:
         ret_arr = np.where(ret_arr < 0, 0, ret_arr)
 
         return np.round(ret_arr)
-
+        
     def map_callback(self, map_msg):
         # Convert the map to a numpy array
         self.map = np.array(map_msg.data, np.double)/100.
