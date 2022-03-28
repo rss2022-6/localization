@@ -1,6 +1,6 @@
 import numpy as np
+from numpy import inf
 from scan_simulator_2d import PyScanSimulator2D
-
 import rospy
 import tf
 from nav_msgs.msg import OccupancyGrid
@@ -139,16 +139,19 @@ class SensorModel:
         # Scale lidar to pixels and clip
         lidar = self.scale(down_scale)
 
-        evaluated = np.ones(scan.shape[0])
-        # Iterate through all particles to find each's probability
-        for index in range(scan.shape[0]):
-            y = scan[index, :]
-            # Multiply probability of each beam at the given particle and distance
-            for beam in range(self.num_beams_per_particle):
-                scan_beam = y[beam]
-                evaluated[index] *= self.sensor_model_table[int(lidar[beam]), int(scan_beam)]
-            # Squash the probabilities
-            evaluated[index] = (evaluated[index])**(1/2.2)
+        lidar = np.tile(lidar, (scan.shape[0], 1))
+        looked_up_values = self.sensor_model_table[lidar, scan]
+        evaluated = np.prod(looked_up_values, axis=1)
+        # evaluated = np.ones(scan.shape[0])
+        # # Iterate through all particles to find each's probability
+        # for index in range(scan.shape[0]):
+        #     y = scan[index, :]
+        #     # Multiply probability of each beam at the given particle and distance
+        #     for beam in range(self.num_beams_per_particle):
+        #         scan_beam = y[beam]
+        #         evaluated[index] *= self.sensor_model_table[int(lidar[beam]), int(scan_beam)]
+        #     # Squash the probabilities
+        evaluated = evaluated**(1/2.2)
         return evaluated
         
     def scale(self, arr):
@@ -158,7 +161,8 @@ class SensorModel:
         ret_arr = np.where(ret_arr > self.z_max, self.z_max, ret_arr)
         ret_arr = np.where(ret_arr < 0, 0, ret_arr)
 
-        return np.round(ret_arr)
+        ret_arr = np.round(ret_arr)
+        return ret_arr.astype(int)
         
     def map_callback(self, map_msg):
         # Convert the map to a numpy array
