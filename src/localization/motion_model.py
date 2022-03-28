@@ -35,7 +35,8 @@ class MotionModel:
         x = np.array([particles[:, 0]]).T
         y = np.array([particles[:, 1]]).T
         theta = np.array([particles[:, 2]]).T
-        
+
+        # Solve for particles
         cos = np.cos(theta)
         sin = np.sin(theta)
 
@@ -43,6 +44,7 @@ class MotionModel:
         dy = odometry[1]
         dtheta = odometry[2]
 
+        # Number of particles we are looking at
         data_size = particles.shape[0]
 
         rot_matrix = np.array([[cos[:,0], sin[:,0]], [-sin[:,0], cos[:,0]]]).T
@@ -55,8 +57,7 @@ class MotionModel:
             car_diff = (car_diff + noise).T
 
             world_diff = np.zeros((data_size, 2, 1))
-            for i in range(data_size):
-                world_diff[i] = np.dot(rot_matrix[i], np.array([car_diff[i]]).T)
+            world_diff = np.dot(rot_matrix, car_diff).T
 
         particles = np.array([x[:] + world_diff[:,0], y[:] + world_diff[:,1], theta[:] + dtheta]).T
         return particles[0]
