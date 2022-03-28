@@ -133,7 +133,7 @@ class SensorModel:
         down_scale = np.take(observation, observed)
         # Perform ray tracing of particles
         # This produces a matrix of size N x num_beams_per_particle
-        scans = self.scan_sim.scan(particles)
+        scans = self.scan_sim.scan(np.ascontiguousarray(particles))
         # Scale rays to pixels and clip to acceptable ranges
         scan = self.scale(scans)
         # Scale lidar to pixels and clip

@@ -19,6 +19,12 @@ class ParticleFilter:
         self.particle_filter_frame = \
                 rospy.get_param("~particle_filter_frame")
 
+        #Initialize the pose
+        self.num_samples = rospy.get_param("~num_particles", 200)
+        self.particles = np.zeros((self.num_samples, 3))
+        self.particle_weights = np.ones(self.num_samples) / float(self.num_samples)
+        rospy.loginfo(self.particle_weights)
+
         # Initialize publishers/subscribers
         #
         #  *Important Note #1:* It is critical for your particle
@@ -61,11 +67,6 @@ class ParticleFilter:
         self.motion_model = MotionModel()
         self.sensor_model = SensorModel()
 
-        #Initialize the pose
-        self.num_samples = 10
-        self.particles = np.zeros((self.num_samples, 3))
-        self.particle_weights = np.ones(self.num_samples) / float(self.num_samples)
-
         # Implement the MCL algorithm
         # using the sensor model and the motion model
         #
@@ -81,12 +82,14 @@ class ParticleFilter:
         scan_data = np.array(scan.ranges)
 
         #Call the sensor model and set the particle weights to it's result
-        self.particle_weights = self.sensor_model.evaluate(self.particles, scan_data)
+        weights = self.sensor_model.evaluate(self.particles, scan_data)
+        weights = weights / np.sum(weights, axis=0)
 
         #Resample
-        indicies = np.random.choice([i for i in range(self.num_samples)], size=self.num_samples, p=self.particle_weights)
+        indicies = np.random.choice([i for i in range(self.num_samples)], size=self.num_samples, p=weights)
+        weights = weights[indicies]
+        self.particle_weights = weights / np.sum(weights, axis=0)
         self.particles = self.particles[indicies]
-        self.particle_weights = self.particle_weights[indicies]
 
         #Publish the average particle pose
         self.publish_averages()
@@ -120,11 +123,17 @@ class ParticleFilter:
     def publish_averages(self):
         max_weight = np.argmax(self.particle_weights)
         max_particle = self.particles[max_weight]
+        quat = tf.transformations.quaternion_from_euler(0, 0, max_particle[2])
 
         odom = Odometry()
         odom.pose.pose.position.x = max_particle[0]
         odom.pose.pose.position.y = max_particle[1]
-        odom.pose.pose.orientation = tf.transformations.quaternion_from_euler(0, 0, max_particle[2])
+        odom.pose.pose.position.z = 0
+
+        odom.pose.pose.orientation.x = quat[0]
+        odom.pose.pose.orientation.y = quat[1]
+        odom.pose.pose.orientation.z = quat[2]
+        odom.pose.pose.orientation.w = quat[3]
         
         self.odom_pub.publish(odom)
 
@@ -137,7 +146,10 @@ class ParticleFilter:
         transform.transform.translation.y = max_particle[1]
         transform.transform.translation.z = 0
 
-        transform.transform.rotation = tf.transformations.quaternion_from_euler(0, 0, max_particle[2])
+        transform.transform.rotation.x = quat[0]
+        transform.transform.rotation.y = quat[1]
+        transform.transform.rotation.z = quat[2]
+        transform.transform.rotation.w = quat[3]
 
         self.broadcaster.sendTransform(transform)
 
