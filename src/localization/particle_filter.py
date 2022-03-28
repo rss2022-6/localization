@@ -62,7 +62,7 @@ class ParticleFilter:
         self.sensor_model = SensorModel()
 
         #Initialize the pose
-        self.num_samples = 200
+        self.num_samples = 10
         self.particles = np.zeros((self.num_samples, 3))
         self.particle_weights = np.ones(self.num_samples) / float(self.num_samples)
 
@@ -78,7 +78,7 @@ class ParticleFilter:
     
     def lidar_callback(self, scan):
         #Get the lidar data from the laser scan
-        scan_data = scan.ranges
+        scan_data = np.array(scan.ranges)
 
         #Call the sensor model and set the particle weights to it's result
         self.particle_weights = self.sensor_model.evaluate(self.particles, scan_data)
