@@ -1,236 +1,30 @@
-
-from test_init import TEST_MAP_ARRAY, TEST_PRECOMPUTED_TABLE, TEST_PARTICLES_2, \
-    TEST_SENSOR_MODEL_INPUT_SCANS, TEST_SENSOR_MODEL_OUTPUT_PROBABILITIES
 import numpy as np
-from scan_simulator_2d import PyScanSimulator2D
-
-import rospy
-import tf
-from nav_msgs.msg import OccupancyGrid
-from tf.transformations import quaternion_from_euler
-
-
-class SensorModel:
-    def __init__(self):
-        # Fetch parameters
-        self.map_topic = "/map"
-        self.num_beams_per_particle = 100
-        self.scan_theta_discretization = 500
-        self.scan_field_of_view = 4.71
-        self.lidar_scale_to_map_scale = 1.0
-
-        ####################################
-        # TODO
-        #  Adjust these parameters
-        self.alpha_hit = 0.74
-        self.alpha_short = 0.07
-        self.alpha_max = 0.07
-        self.alpha_rand = 0.12
-        self.sigma_hit = 8.0
-        self.z_max = 200.0
-
-        # Your sensor table will be a `table_width` x `table_width` np array:
-        self.table_width = 201
-        ####################################
-
-        #  Precompute the sensor model table
-        self.sensor_model_table = None
-        self.precompute_sensor_model()
-
-        # Create a simulated laser scan
-        self.scan_sim = PyScanSimulator2D(
-            self.num_beams_per_particle,
-            self.scan_field_of_view,
-            0,  # This is not the simulator, don't add noise
-            0.01,  # This is used as an epsilon
-            self.scan_theta_discretization)
-
-        # Subscribe to the map
-        self.map = None
-        self.map_set = False
-        rospy.Subscriber(
-            self.map_topic,
-            OccupancyGrid,
-            self.map_callback,
-            queue_size=1)
-
-    def precompute_sensor_model(self):
-        """
-        Generate and store a table which represents the sensor model.
-
-        For each discrete computed range value, this provides the probability of
-        measuring any (discrete) range. This table is indexed by the sensor model
-        at runtime by discretizing the measurements and computed ranges from
-        RangeLibc.
-        This table must be implemented as a numpy 2D array.
-
-        Compute the table based on class parameters alpha_hit, alpha_short,
-        alpha_max, alpha_rand, sigma_hit, and table_width.
-
-        args:
-            N/A
-
-        returns:
-            No return type. Directly modify `self.sensor_model_table`.
-        """
-        # used 200 for max pixel distance because that is what they use in the graph example
-        d = np.linspace(0, self.z_max, num=self.table_width)
-        z_k = np.array([np.linspace(0, self.z_max, num=self.table_width)]).T
-        print(self.z_max)
-        p_hit = np.where(np.logical_and(z_k >= 0, z_k <= self.z_max),
-                         np.exp(-((z_k - d) ** 2) / (2 * self.sigma_hit ** 2)) * 1 / (
-                                 (2 * np.pi * self.sigma_hit ** 2) ** 0.5),
-                         0)
-
-        p_hit = p_hit / np.sum(p_hit, axis=0)  # normalize p_hit distribution for each value of d
-
-
-        p_short = np.where(np.logical_and(z_k >= 0, np.logical_and(z_k <= d, d != 0)),
-                           2 / d * (1 - z_k / d),
-                           0)
-
-
-        p_max = np.where(z_k == self.z_max,
-                         1,
-                         0)
-
-
-        p_rand = np.where(np.logical_and(0 <= z_k, z_k <= self.z_max),
-                          1 / self.z_max,
-                          0)
-
-        p = self.alpha_hit * p_hit \
-            + self.alpha_short * p_short \
-            + self.alpha_max * p_max \
-            + self.alpha_rand * p_rand
-
-        p = p / np.sum(p, axis=0)  # normalize whole probablility distribution for each value of d
-
-        self.sensor_model_table = p
-        return p  # np 2D array, rows are z_k values, columns are d values
-        # ex: [[(d=0, z_k=0), (d=1,z_k=0)], [(d=0, z_k=1), (d=1, z_k=1)]]
-
-    def evaluate(self, particles, observation):
-        """
-        Evaluate how likely each particle is given
-        the observed scan.
-
-        args:
-            particles: An Nx3 matrix of the form:
-
-                [x0 y0 theta0]
-                [x1 y0 theta1]
-                [    ...     ]
-
-            observation: A vector of lidar data measured
-                from the actual lidar.
-
-        returns:
-           probabilities: A vector of length N representing
-               the probability of each particle existing
-               given the observation and the map.
-        """
-
-        if not self.map_set:
-            return
-        ####################################
-        # TODO
-        # Evaluate the sensor model here!
-        #
-        # You will probably want to use this function
-        # to perform ray tracing from all the particles.
-        # This produces a matrix of size N x num_beams_per_particle
-
-        # Down scale lidar data to 100 observations
-        observed = np.arange(0, observation.size, observation.size / self.num_beams_per_particle)
-        down_scale = np.take(observation, observed)
-        # Perform ray tracing of particles
-        scans = self.scan_sim.scan(particles)
-        min_scan = np.amin(scans, axis=1)
-        # Scale rays to pixels and clip to acceptable ranges
-        min_scan = self.scale(min_scan)
-        # Scale lidar to pixels and clip
-        lidar = self.scale(down_scale)
-
-        i = np.arange(min_scan.size)
-        evaluated = np.array([])
-        for index in i:  # may need to change this for efficiency eventually
-            x = int(lidar[index])
-            y = int(min_scan[index])
-            # evaluated = np.append(evaluated, y)
-            # Squash the probabilities
-            evaluated = np.append(evaluated, (self.sensor_model_table[x, y]) ** (1 / 2.2))
-        return evaluated
-
-    def scale(self, arr):
-        # Scale to pixels
-        ret_arr = np.divide(arr, self.map_resolution * self.lidar_scale_to_map_scale)
-        # Clip between 0 and z_max
-        ret_arr = np.where(ret_arr > self.z_max, self.z_max, ret_arr)
-        ret_arr = np.where(ret_arr < 0, 0, ret_arr)
-
-        return np.round(ret_arr)
-
-    def map_callback(self, map_msg):
-        # Convert the map to a numpy array
-        self.map = np.array(map_msg.data, np.double) / 100.
-        self.map = np.clip(self.map, 0, 1)
-
-        # Convert the origin to a tuple
-        origin_p = map_msg.info.origin.position
-        origin_o = map_msg.info.origin.orientation
-        origin_o = tf.transformations.euler_from_quaternion((
-            origin_o.x,
-            origin_o.y,
-            origin_o.z,
-            origin_o.w))
-        origin = (origin_p.x, origin_p.y, origin_o[2])
-
-        # Initialize a map with the laser scan
-        self.scan_sim.set_map(
-            self.map,
-            map_msg.info.height,
-            map_msg.info.width,
-            map_msg.info.resolution,
-            origin,
-            0.5)  # Consider anything < 0.5 to be free
-
-        # Make the map set
-        self.map_set = True
-
-        self.map_resolution = map_msg.info.resolution
-
-        print("Map initialized")
-
+scan = np.array([[0.0, 0, 0], [1, 1, 1], [2, 2, 2]])
+lidar = np.array([0.0, 1, 2])
+sensor_model_table = np.array([[0.1, 0.2, 0.3], [0.4, 0.5, 0.6], [0.7, 0.8, 0.9]])
 
 if __name__ == "__main__":
-    print('running andrew...')
-    sensor_model = SensorModel()
+    # lidar2 = np.repeat(lidar[:, np.newaxis], scan.shape[0], axis=1)
+    # lidar2 = np.array([[0,1,2], [0,1,2], [0,1,2]])
+    print(scan)
+    np.round(scan)
+    print(scan)
+    scan = scan.astype(int)
+    print(scan)
+    lidar = np.tile(lidar,(scan.shape[0], 1))
+    looked_up_values = sensor_model_table[lidar, scan]
+    evaluated = np.prod(looked_up_values,axis=1)
 
-    sensor_model.alpha_hit = 0.74
-    sensor_model.alpha_short = 0.07
-    sensor_model.alpha_max = 0.07
-    sensor_model.alpha_rand = 0.12
-    sensor_model.sigma_hit = 8.0
-    sensor_model.table_width = 201
-    tol = 1e-6
-    sensor_model.precompute_sensor_model()
+    print(evaluated)
 
-    # print('\n\nprecomputed sensor model tests:--------------------------------------------')
-    # expected_table = np.array(TEST_PRECOMPUTED_TABLE)
-    actual_table = sensor_model.sensor_model_table
-    # print(expected_table)
-    print(actual_table)
-    # np.testing.assert_allclose(expected_table, actual_table, rtol=tol)
-    # print('sensor model passes tests')
-    #
-    # print('\n\nevaluate tests:=============================================================')
-    # expected_probabilities = np.array(TEST_SENSOR_MODEL_OUTPUT_PROBABILITIES)
-    # print('\nexpected probs', expected_probabilities)
-    # actual_probabilities = sensor_model.evaluate(
-    #     np.array(TEST_PARTICLES_2), np.array(TEST_SENSOR_MODEL_INPUT_SCANS))
-    # print('\nactual probs', actual_probabilities)
-    # print('\nasserting...')
-    # np.testing.assert_allclose(expected_probabilities,
-    #                            actual_probabilities,
-    #                            rtol=tol)
+    # evaluated = np.ones(scan.shape[0])
+    # # Iterate through all particles to find each's probability
+    # for index in range(scan.shape[0]):
+    #     y = scan[index, :]
+    #     # Multiply probability of each beam at the given particle and distance
+    #     for beam in range(3):
+    #         scan_beam = y[beam]
+    #         evaluated[index] *= sensor_model_table[int(lidar[beam]), int(scan_beam)]
+    #     # # Squash the probabilities
+    #     # evaluated[index] = (evaluated[index]) ** (1 / 2.2)
+    # print(evaluated)
