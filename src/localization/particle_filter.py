@@ -26,6 +26,7 @@ class ParticleFilter:
         self.particle_weights = np.ones(self.num_samples) / float(self.num_samples)
         self.prev_time = rospy.get_time()
         self.map_initialized = False
+        self.pose_initialized = False
 
         # Initialize publishers/subscribers
         #
@@ -82,7 +83,7 @@ class ParticleFilter:
         # and the particle_filter_frame.
     
     def lidar_callback(self, scan):
-        if self.map_initialized:
+        if self.map_initialized and self.pose_initialized:
             #Get the lidar data from the laser scan
             scan_data = np.array(scan.ranges)
 
@@ -100,7 +101,7 @@ class ParticleFilter:
             self.publish_averages()
 
     def odom_callback(self, odometry):
-        if self.map_initialized:
+        if self.map_initialized and self.pose_initialized:
             #Get the x-axis and y-axis linear velocity and z-axis angular velocity
             x = odometry.twist.twist.linear.x
             y = odometry.twist.twist.linear.y
@@ -112,7 +113,8 @@ class ParticleFilter:
 
             #Call the motion model and set the particles to it's result
             odom_data = [x * time_diff, y * time_diff, theta * time_diff]
-            self.particles = self.motion_model.evaluate(self.particles, odom_data)
+            particles = self.motion_model.evaluate(self.particles, odom_data)
+            self.particles = particles
 
             #Publish the average particle pose
             self.publish_averages()
@@ -130,14 +132,29 @@ class ParticleFilter:
         self.particles = noise + np.array([x, y, theta])
         self.particle_weights = np.ones(self.num_samples) / float(self.num_samples)
 
+        self.prev_time = rospy.get_time()
+        self.pose_initialized = True
+
     def publish_averages(self):
+        # avg_x = np.average(self.particles[:,0], weights=self.particle_weights)
+        # avg_y = np.average(self.particles[:,1], weights=self.particle_weights)
+        # avg_theta = np.arctan2(np.sum(np.sin(self.particles[:,2]))/self.num_samples, np.sum(np.cos(self.particles[:,2]))/self.num_samples)
+
         max_weight = np.argmax(self.particle_weights)
         max_particle = self.particles[max_weight]
-        quat = tf.transformations.quaternion_from_euler(0, 0, max_particle[2])
+
+        avg_x = max_particle[0]
+        avg_y = max_particle[1]
+        avg_theta = max_particle[2]
+        quat = tf.transformations.quaternion_from_euler(0, 0, avg_theta)
 
         odom = Odometry()
-        odom.pose.pose.position.x = max_particle[0]
-        odom.pose.pose.position.y = max_particle[1]
+        odom.header.stamp = rospy.Time.now()
+        odom.header.frame_id = "map"
+        odom.child_frame_id = "base_link_pf"
+
+        odom.pose.pose.position.x = avg_x
+        odom.pose.pose.position.y = avg_y
         odom.pose.pose.position.z = 0
 
         odom.pose.pose.orientation.x = quat[0]
@@ -147,21 +164,21 @@ class ParticleFilter:
         
         self.odom_pub.publish(odom)
 
-        transform = TransformStamped()
-        transform.header.stamp = rospy.Time.now()
-        transform.header.frame_id = "map"
-        transform.child_frame_id = self.particle_filter_frame
+        # transform = TransformStamped()
+        # transform.header.stamp = rospy.Time.now()
+        # transform.header.frame_id = "map"
+        # transform.child_frame_id = self.particle_filter_frame
 
-        transform.transform.translation.x = max_particle[0]
-        transform.transform.translation.y = max_particle[1]
-        transform.transform.translation.z = 0
+        # transform.transform.translation.x = avg_x
+        # transform.transform.translation.y = avg_y
+        # transform.transform.translation.z = 0
 
-        transform.transform.rotation.x = quat[0]
-        transform.transform.rotation.y = quat[1]
-        transform.transform.rotation.z = quat[2]
-        transform.transform.rotation.w = quat[3]
+        # transform.transform.rotation.x = quat[0]
+        # transform.transform.rotation.y = quat[1]
+        # transform.transform.rotation.z = quat[2]
+        # transform.transform.rotation.w = quat[3]
 
-        self.broadcaster.sendTransform(transform)
+        # self.broadcaster.sendTransform(transform)
     
     def initialized_map(self, map):
         self.map_initialized = True

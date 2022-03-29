@@ -51,7 +51,7 @@ class MotionModel:
         if (self.deterministic):
             world_diff = np.dot(rot_matrix[:], car_diff)
         else:
-            noise = np.random.normal(0, 0.005, size=(2, data_size))
+            noise = np.random.normal(0, 0.2, size=(2, data_size))
             car_diff = (car_diff + noise).T
 
             world_diff = np.zeros((data_size, 2, 1))
