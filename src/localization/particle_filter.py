@@ -4,10 +4,12 @@ import rospy
 import tf
 import tf2_ros
 import numpy as np
+import geometry_msgs.msg
 from sensor_model import SensorModel
 from motion_model import MotionModel
 
 from sensor_msgs.msg import LaserScan
+from std_msgs.msg import Float32
 from nav_msgs.msg import Odometry
 from geometry_msgs.msg import PoseWithCovarianceStamped, TransformStamped, PoseArray, Pose
 from nav_msgs.msg import OccupancyGrid
@@ -64,8 +66,12 @@ class ParticleFilter:
         #     odometry you publish here should be with respect to the
         #     "/map" frame.
         self.odom_pub  = rospy.Publisher("/pf/pose/odom", Odometry, queue_size = 1)
+        self.dist_error_pub = rospy.Publisher("/pf/error/distance", Float32, queue_size=1)
+        self.angle_error_pub = rospy.Publisher("/pf/error/angle", Float32, queue_size=1)
 
         # Initialize the transformation publisher
+        self.tfBuffer = tf2_ros.Buffer()
+        listener = tf2_ros.TransformListener(self.tfBuffer)
         self.broadcaster = tf2_ros.TransformBroadcaster()
         self.pose_pub = rospy.Publisher("/pose_cloud", PoseArray, queue_size = 1)
         self.map_sub = rospy.Subscriber(map_topic, OccupancyGrid, self.initialized_map, queue_size = 1)
@@ -183,6 +189,7 @@ class ParticleFilter:
 
         self.broadcaster.sendTransform(transform)
 
+        self.publish_errors(transform)
         self.publish_poses()
 
     def publish_poses(self):
@@ -213,6 +220,52 @@ class ParticleFilter:
     
     def initialized_map(self, map):
         self.map_initialized = True
+
+    def publish_errors(self, localized):
+        # finding error
+        ground_truth = self.tfBuffer.lookup_transform("map", "base_link", rospy.Time())
+        gt_trans = ground_truth.transform.translation
+        gt_trans_matrix = tf.transformations.translation_matrix([gt_trans.x, gt_trans.y, gt_trans.z])
+        gt_trans = gt_trans_matrix[:, 3]
+        gt_trans = gt_trans[0:3]
+
+        pf_trans = localized.transform.translation
+        pf_trans_matrix = tf.transformations.translation_matrix([pf_trans.x, pf_trans.y, pf_trans.z])
+        pf_trans = pf_trans_matrix[:, 3]
+        pf_trans = pf_trans[0:3]
+
+        distance_error = np.linalg.norm(pf_trans - gt_trans)
+
+        gt_rot = ground_truth.transform.rotation
+        pf_rot = localized.transform.rotation
+        angle_error = np.rad2deg(2 * (np.arccos(pf_rot.w) - np.arccos(gt_rot.w)))
+
+        self.dist_error_pub.publish(distance_error)
+        self.angle_error_pub.publish(angle_error)
+
+    def matrix_to_trans_stamp(self, matrix, parent_frame, child_frame):
+        # takes in a parent, child, and matrix to create a transformation stamp to publish
+        trans_stamp = geometry_msgs.msg.TransformStamped()
+
+        # Add a timestamp
+        trans_stamp.header.stamp = rospy.Time.now()
+
+        # Add the source and target frame
+        trans_stamp.header.frame_id = parent_frame
+        trans_stamp.child_frame_id = child_frame
+
+        # Add the translation
+        trans_stamp.transform.translation.x = matrix[0, 3]
+        trans_stamp.transform.translation.y = matrix[1, 3]
+        trans_stamp.transform.translation.z = matrix[2, 3]
+
+        # Add the rotation
+        quat = t.quaternion_from_matrix(matrix)
+        trans_stamp.transform.rotation.x = quat[0]
+        trans_stamp.transform.rotation.y = quat[1]
+        trans_stamp.transform.rotation.z = quat[2]
+        trans_stamp.transform.rotation.w = quat[3]
+        return trans_stamp
 
 if __name__ == "__main__":
     rospy.init_node("particle_filter")
