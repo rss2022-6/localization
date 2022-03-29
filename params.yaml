@@ -23,6 +23,9 @@ particle_filter_frame: "/base_link_pf"
 
 # Deterministic flag; set to true to remove all added noise
 deterministic: false
+xy_variance: 0.01
+theta_variance: 0.005
+odometry_variance: 0.005
 
 # Scale lidar observations
 lidar_scale_to_map_scale: 1.0

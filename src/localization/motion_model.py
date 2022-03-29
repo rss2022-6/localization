@@ -9,6 +9,8 @@ class MotionModel:
         # Do any precomputation for the motion
         # model here.
         self.deterministic = rospy.get_param("~deterministic")
+        self.xy_variance = rospy.get_param("~xy_variance", 0.01)
+        self.theta_variance = rospy.get_param("~theta_variance", 0.005)
 
         ####################################
 
@@ -51,10 +53,10 @@ class MotionModel:
         if (self.deterministic):
             world_diff = np.dot(rot_matrix[:], car_diff)
         else:
-            x_y_noise = np.random.normal(0, 0.01, size=(2, data_size))
-            car_diff = (car_diff + x_y_noise).T
+            xy_noise = np.random.normal(0, self.xy_variance, size=(2, data_size))
+            car_diff = (car_diff + xy_noise).T
 
-            theta_noise = np.random.normal(0, 0.005, size=data_size)
+            theta_noise = np.random.normal(0, self.theta_variance, size=data_size)
             theta_diff = dtheta + theta_noise
 
             world_diff = np.zeros((data_size, 2, 1))

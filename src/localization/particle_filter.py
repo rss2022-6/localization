@@ -9,7 +9,7 @@ from motion_model import MotionModel
 
 from sensor_msgs.msg import LaserScan
 from nav_msgs.msg import Odometry
-from geometry_msgs.msg import PoseWithCovarianceStamped, TransformStamped
+from geometry_msgs.msg import PoseWithCovarianceStamped, TransformStamped, PoseArray, Pose
 from nav_msgs.msg import OccupancyGrid
 
 
@@ -27,6 +27,7 @@ class ParticleFilter:
         self.prev_time = rospy.get_time()
         self.map_initialized = False
         self.pose_initialized = False
+        self.odometry_variance = rospy.get_param("~odometry_variance", 0)
 
         # Initialize publishers/subscribers
         #
@@ -66,6 +67,7 @@ class ParticleFilter:
 
         # Initialize the transformation publisher
         self.broadcaster = tf2_ros.TransformBroadcaster()
+        self.pose_pub = rospy.Publisher("/pose_cloud", PoseArray, queue_size = 1)
         self.map_sub = rospy.Subscriber(map_topic, OccupancyGrid, self.initialized_map, queue_size = 1)
         
         # Initialize the models
@@ -113,7 +115,8 @@ class ParticleFilter:
 
             #Call the motion model and set the particles to it's result
             odom_data = [x * time_diff, y * time_diff, theta * time_diff]
-            particles = self.motion_model.evaluate(self.particles, odom_data)
+            noisy_odom_data = np.random.normal(0, self.odometry_variance, size=3) + odom_data
+            particles = self.motion_model.evaluate(self.particles, noisy_odom_data)
             self.particles = particles
 
             #Publish the average particle pose
@@ -179,6 +182,34 @@ class ParticleFilter:
         transform.transform.rotation.w = quat[3]
 
         self.broadcaster.sendTransform(transform)
+
+        self.publish_poses()
+
+    def publish_poses(self):
+        x = self.particles[:,0]
+        y = self.particles[:,1]
+        theta = self.particles[:,2]
+
+        poses = []
+        for i in range(self.num_samples):
+            pose = Pose()
+            pose.position.x = x[i]
+            pose.position.y = y[i]
+            pose.position.z = 0
+
+            quat = tf.transformations.quaternion_from_euler(0, 0, theta[i])
+            pose.orientation.x = quat[0]
+            pose.orientation.y = quat[1]
+            pose.orientation.z = quat[2]
+            pose.orientation.w = quat[3]
+
+            poses.append(pose)
+        
+        pose_array = PoseArray()
+        pose_array.header.stamp = rospy.Time.now()
+        pose_array.header.frame_id = "map"
+        pose_array.poses = poses
+        self.pose_pub.publish(pose_array)
     
     def initialized_map(self, map):
         self.map_initialized = True
