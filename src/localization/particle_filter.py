@@ -164,21 +164,21 @@ class ParticleFilter:
         
         self.odom_pub.publish(odom)
 
-        # transform = TransformStamped()
-        # transform.header.stamp = rospy.Time.now()
-        # transform.header.frame_id = "map"
-        # transform.child_frame_id = self.particle_filter_frame
+        transform = TransformStamped()
+        transform.header.stamp = rospy.Time.now()
+        transform.header.frame_id = "map"
+        transform.child_frame_id = self.particle_filter_frame
 
-        # transform.transform.translation.x = avg_x
-        # transform.transform.translation.y = avg_y
-        # transform.transform.translation.z = 0
+        transform.transform.translation.x = avg_x
+        transform.transform.translation.y = avg_y
+        transform.transform.translation.z = 0
 
-        # transform.transform.rotation.x = quat[0]
-        # transform.transform.rotation.y = quat[1]
-        # transform.transform.rotation.z = quat[2]
-        # transform.transform.rotation.w = quat[3]
+        transform.transform.rotation.x = quat[0]
+        transform.transform.rotation.y = quat[1]
+        transform.transform.rotation.z = quat[2]
+        transform.transform.rotation.w = quat[3]
 
-        # self.broadcaster.sendTransform(transform)
+        self.broadcaster.sendTransform(transform)
     
     def initialized_map(self, map):
         self.map_initialized = True
