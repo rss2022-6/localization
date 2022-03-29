@@ -51,12 +51,15 @@ class MotionModel:
         if (self.deterministic):
             world_diff = np.dot(rot_matrix[:], car_diff)
         else:
-            noise = np.random.normal(0, 0.01, size=(2, data_size))
-            car_diff = (car_diff + noise).T
+            x_y_noise = np.random.normal(0, 0.01, size=(2, data_size))
+            car_diff = (car_diff + x_y_noise).T
+
+            theta_noise = np.random.normal(0, 0.005, size=data_size)
+            theta_diff = dtheta + theta_noise
 
             world_diff = np.zeros((data_size, 2, 1))
             world_diff = (np.dot(rot_matrix, car_diff.T)).diagonal()
 
-        particles = np.array([x[:,0] + world_diff[:,0], y[:,0] + world_diff[:,1], theta[:,0] + dtheta]).T
+        particles = np.array([x[:,0] + world_diff[:,0], y[:,0] + world_diff[:,1], theta[:,0] + theta_diff]).T
         return particles
         ####################################
