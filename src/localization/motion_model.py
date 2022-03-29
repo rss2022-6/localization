@@ -57,6 +57,6 @@ class MotionModel:
             world_diff = np.zeros((data_size, 2, 1))
             world_diff = (np.dot(rot_matrix, car_diff.T)).diagonal()
 
-        particles = np.array([x[:] + world_diff[:,0], y[:] + world_diff[:,1], theta[:] + dtheta]).T
-        return particles[0]
+        particles = np.array([x[:,0] + world_diff[:,0], y[:,0] + world_diff[:,1], theta[:,0] + dtheta]).T
+        return particles
         ####################################

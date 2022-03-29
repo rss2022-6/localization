@@ -10,6 +10,7 @@ from motion_model import MotionModel
 from sensor_msgs.msg import LaserScan
 from nav_msgs.msg import Odometry
 from geometry_msgs.msg import PoseWithCovarianceStamped, TransformStamped
+from nav_msgs.msg import OccupancyGrid
 
 
 class ParticleFilter:
@@ -23,7 +24,8 @@ class ParticleFilter:
         self.num_samples = rospy.get_param("~num_particles", 200)
         self.particles = np.zeros((self.num_samples, 3))
         self.particle_weights = np.ones(self.num_samples) / float(self.num_samples)
-        rospy.loginfo(self.particle_weights)
+        self.prev_time = rospy.get_time()
+        self.map_initialized = False
 
         # Initialize publishers/subscribers
         #
@@ -36,6 +38,7 @@ class ParticleFilter:
         #     information, and *not* use the pose component.
         scan_topic = rospy.get_param("~scan_topic", "/scan")
         odom_topic = rospy.get_param("~odom_topic", "/odom")
+        map_topic = rospy.get_param("~map_topic", "/map")
         self.laser_sub = rospy.Subscriber(scan_topic, LaserScan,
                                           self.lidar_callback,
                                           queue_size=1)
@@ -62,6 +65,7 @@ class ParticleFilter:
 
         # Initialize the transformation publisher
         self.broadcaster = tf2_ros.TransformBroadcaster()
+        self.map_sub = rospy.Subscriber(map_topic, OccupancyGrid, self.initialized_map, queue_size = 1)
         
         # Initialize the models
         self.motion_model = MotionModel()
@@ -78,34 +82,40 @@ class ParticleFilter:
         # and the particle_filter_frame.
     
     def lidar_callback(self, scan):
-        #Get the lidar data from the laser scan
-        scan_data = np.array(scan.ranges)
+        if self.map_initialized:
+            #Get the lidar data from the laser scan
+            scan_data = np.array(scan.ranges)
 
-        #Call the sensor model and set the particle weights to it's result
-        weights = self.sensor_model.evaluate(self.particles, scan_data)
-        weights = weights / np.sum(weights, axis=0)
+            #Call the sensor model and set the particle weights to it's result
+            weights = self.sensor_model.evaluate(self.particles, scan_data)
+            weights = weights / np.sum(weights)
 
-        #Resample
-        indicies = np.random.choice([i for i in range(self.num_samples)], size=self.num_samples, p=weights)
-        weights = weights[indicies]
-        self.particle_weights = weights / np.sum(weights, axis=0)
-        self.particles = self.particles[indicies]
+            #Resample
+            indicies = np.random.choice(np.arange(self.num_samples), size=self.num_samples, p=weights)
+            weights = weights[indicies]
+            self.particle_weights = weights / np.sum(weights)
+            self.particles = self.particles[indicies]
 
-        #Publish the average particle pose
-        self.publish_averages()
+            #Publish the average particle pose
+            self.publish_averages()
 
     def odom_callback(self, odometry):
-        #Get the x-axis and y-axis linear velocity and z-axis angular velocity
-        x = odometry.twist.twist.linear.x
-        y = odometry.twist.twist.linear.y
-        theta = odometry.twist.twist.angular.z
+        if self.map_initialized:
+            #Get the x-axis and y-axis linear velocity and z-axis angular velocity
+            x = odometry.twist.twist.linear.x
+            y = odometry.twist.twist.linear.y
+            theta = odometry.twist.twist.angular.z
 
-        #Call the motion model and set the particles to it's result
-        odom_data = [x, y, theta]
-        self.particles = self.motion_model.evaluate(self.particles, odom_data)
+            #Get the time diff between the last measurement and now
+            time_diff = rospy.get_time() - self.prev_time
+            self.prev_time = rospy.get_time()
 
-        #Publish the average particle pose
-        self.publish_averages()
+            #Call the motion model and set the particles to it's result
+            odom_data = [x * time_diff, y * time_diff, theta * time_diff]
+            self.particles = self.motion_model.evaluate(self.particles, odom_data)
+
+            #Publish the average particle pose
+            self.publish_averages()
 
     def pose_init_callback(self, pose):
         x = pose.pose.pose.position.x
@@ -113,8 +123,8 @@ class ParticleFilter:
         quat = pose.pose.pose.orientation
         theta = tf.transformations.euler_from_quaternion([quat.x, quat.y, quat.z, quat.w])[2]
 
-        location_noise = np.random.normal(0, 2, size=(2, self.num_samples))
-        angle_noise = np.random.normal(0, 0.5, size=(1, self.num_samples))
+        location_noise = np.random.normal(0, 0.5, size=(2, self.num_samples))
+        angle_noise = np.random.normal(0, 0.1, size=(1, self.num_samples))
         noise = np.array([location_noise[0], location_noise[1], angle_noise[0]]).T
 
         self.particles = noise + np.array([x, y, theta])
@@ -152,6 +162,9 @@ class ParticleFilter:
         transform.transform.rotation.w = quat[3]
 
         self.broadcaster.sendTransform(transform)
+    
+    def initialized_map(self, map):
+        self.map_initialized = True
 
 if __name__ == "__main__":
     rospy.init_node("particle_filter")
