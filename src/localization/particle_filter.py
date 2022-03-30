@@ -190,7 +190,7 @@ class ParticleFilter:
         self.broadcaster.sendTransform(transform)
 
         self.publish_errors(transform)
-        self.publish_poses()
+        # self.publish_poses()
 
     def publish_poses(self):
         x = self.particles[:,0]
