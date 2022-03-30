@@ -1,4 +1,6 @@
 <launch>
+  <node pkg="safety" name="scan_processor" type="scan.py">
+  </node>
   <node pkg="localization" type="particle_filter.py" name="particle_filter" output="screen">
     <rosparam command="load" file="$(find localization)/params.yaml"/>
   </node>

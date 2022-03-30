@@ -13,6 +13,7 @@ from std_msgs.msg import Float32
 from nav_msgs.msg import Odometry
 from geometry_msgs.msg import PoseWithCovarianceStamped, TransformStamped, PoseArray, Pose
 from nav_msgs.msg import OccupancyGrid
+from numpy import inf
 
 
 class ParticleFilter:
@@ -66,6 +67,7 @@ class ParticleFilter:
         #     odometry you publish here should be with respect to the
         #     "/map" frame.
         self.odom_pub  = rospy.Publisher("/pf/pose/odom", Odometry, queue_size = 1)
+        # self.lidar_pub = rospy.Publisher("/pf/scan", LaserScan, queue_size = 1)
         self.dist_error_pub = rospy.Publisher("/pf/error/distance", Float32, queue_size=1)
         self.angle_error_pub = rospy.Publisher("/pf/error/angle", Float32, queue_size=1)
 
@@ -98,6 +100,11 @@ class ParticleFilter:
             #Call the sensor model and set the particle weights to it's result
             weights = self.sensor_model.evaluate(self.particles, scan_data)
             weights = weights / np.sum(weights)
+
+            # scan.header.stamp = rospy.Time.now()
+            # scan.header.frame_id = self.particle_filter_frame
+            # scan.ranges = scaled_scan
+            # self.lidar_pub.publish(scan)
 
             #Resample
             indicies = np.random.choice(np.arange(self.num_samples), size=self.num_samples, p=weights)
@@ -143,18 +150,19 @@ class ParticleFilter:
 
         self.prev_time = rospy.get_time()
         self.pose_initialized = True
+        self.publish_poses()
 
     def publish_averages(self):
-        # avg_x = np.average(self.particles[:,0], weights=self.particle_weights)
-        # avg_y = np.average(self.particles[:,1], weights=self.particle_weights)
-        # avg_theta = np.arctan2(np.sum(np.sin(self.particles[:,2]))/self.num_samples, np.sum(np.cos(self.particles[:,2]))/self.num_samples)
+        avg_x = np.average(self.particles[:,0], weights=self.particle_weights)
+        avg_y = np.average(self.particles[:,1], weights=self.particle_weights)
+        avg_theta = np.arctan2(np.sum(np.sin(self.particles[:,2]))/self.num_samples, np.sum(np.cos(self.particles[:,2]))/self.num_samples)
 
-        max_weight = np.argmax(self.particle_weights)
-        max_particle = self.particles[max_weight]
+        # max_weight = np.argmax(self.particle_weights)
+        # max_particle = self.particles[max_weight]
 
-        avg_x = max_particle[0]
-        avg_y = max_particle[1]
-        avg_theta = max_particle[2]
+        # avg_x = max_particle[0]
+        # avg_y = max_particle[1]
+        # avg_theta = max_particle[2]
         quat = tf.transformations.quaternion_from_euler(0, 0, avg_theta)
 
         odom = Odometry()
@@ -190,7 +198,7 @@ class ParticleFilter:
         self.broadcaster.sendTransform(transform)
 
         self.publish_errors(transform)
-        # self.publish_poses()
+        self.publish_poses()
 
     def publish_poses(self):
         x = self.particles[:,0]

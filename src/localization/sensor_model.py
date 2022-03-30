@@ -5,6 +5,8 @@ import rospy
 import tf
 from nav_msgs.msg import OccupancyGrid
 from tf.transformations import quaternion_from_euler
+from numpy import inf
+from sensor_msgs.msg import LaserScan
 
 class SensorModel:
     def __init__(self):
@@ -32,6 +34,8 @@ class SensorModel:
         #  Precompute the sensor model table
         self.sensor_model_table = None
         self.precompute_sensor_model()
+
+        self.lidar_pub = rospy.Publisher("/pf/scan", LaserScan, queue_size = 1)
 
         # Create a simulated laser scan
         self.scan_sim = PyScanSimulator2D(
@@ -129,8 +133,8 @@ class SensorModel:
         # Evaluate the sensor model here!
 
         # Down scale lidar data to 100 observations
-        observed = np.arange(0, observation.size, observation.size/self.num_beams_per_particle)
-        down_scale = np.take(observation, observed)
+        observed = np.arange(0, observation.size, observation.size/float(self.num_beams_per_particle))
+        down_scale = np.take(observation, np.round(observed).astype(int))
         # Perform ray tracing of particles
         # This produces a matrix of size N x num_beams_per_particle
         scans = self.scan_sim.scan(np.ascontiguousarray(particles))
@@ -138,6 +142,20 @@ class SensorModel:
         scan = self.scale(scans)
         # Scale lidar to pixels and clip
         lidar = self.scale(down_scale)
+
+        scan1 = LaserScan()
+        scan1.header.stamp = rospy.Time.now()
+        scan1.header.frame_id = "base_link_pf"
+        scan1.angle_min = -2.0 * np.pi / 3.0
+        scan1.angle_max = 2.0 * np.pi / 3.0
+        scan1.angle_increment = 4.0 * np.pi / 300.0
+        scan1.range_min = 0
+        scan1.range_max = 20
+        scan1.ranges = lidar
+        self.lidar_pub.publish(scan1)
+
+        lidar = np.round(lidar).astype(int)
+        scan = np.round(scan).astype(int)
 
         lidar = np.tile(lidar, (scan.shape[0], 1))
         looked_up_values = self.sensor_model_table[lidar, scan]
@@ -151,7 +169,7 @@ class SensorModel:
         #         scan_beam = y[beam]
         #         evaluated[index] *= self.sensor_model_table[int(lidar[beam]), int(scan_beam)]
         #     # Squash the probabilities
-        evaluated = evaluated**(1/2.2)
+        evaluated = evaluated**(1/1.2)
         return evaluated
         
     def scale(self, arr):
@@ -160,9 +178,7 @@ class SensorModel:
         # Clip between 0 and z_max
         ret_arr = np.where(ret_arr > self.z_max, self.z_max, ret_arr)
         ret_arr = np.where(ret_arr < 0, 0, ret_arr)
-
-        ret_arr = np.round(ret_arr)
-        return ret_arr.astype(int)
+        return ret_arr
         
     def map_callback(self, map_msg):
         # Convert the map to a numpy array
